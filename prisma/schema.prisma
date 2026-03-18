@@ -1,0 +1,229 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name      String   @default("User")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tasks         Task[]
+  habits        Habit[]
+  projects      Project[]
+  goals         Goal[]
+  healthEntries HealthEntry[]
+  dailyLogs     DailyLog[]
+  weeklyReviews WeeklyReview[]
+  metrics       Metric[]
+}
+
+model Task {
+  id          String     @id @default(cuid())
+  title       String
+  description String?
+  priority    Priority   @default(MEDIUM)
+  status      TaskStatus @default(TODO)
+  dueDate     DateTime?
+  completedAt DateTime?
+  projectId   String?
+  goalId      String?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  userId  String
+  user    User     @relation(fields: [userId], references: [id])
+  project Project? @relation(fields: [projectId], references: [id])
+  goal    Goal?    @relation(fields: [goalId], references: [id])
+}
+
+model Habit {
+  id          String      @id @default(cuid())
+  name        String
+  description String?
+  frequency   HabitFreq   @default(DAILY)
+  color       String      @default("#6366f1")
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  userId String
+  user   User       @relation(fields: [userId], references: [id])
+  logs   HabitLog[]
+}
+
+model HabitLog {
+  id        String   @id @default(cuid())
+  date      DateTime @db.Date
+  completed Boolean  @default(false)
+  note      String?
+  createdAt DateTime @default(now())
+
+  habitId String
+  habit   Habit  @relation(fields: [habitId], references: [id])
+
+  @@unique([habitId, date])
+}
+
+model Project {
+  id          String        @id @default(cuid())
+  name        String
+  description String?
+  status      ProjectStatus @default(ACTIVE)
+  progress    Int           @default(0)
+  dueDate     DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  userId     String
+  lifeAreaId String?
+  user       User      @relation(fields: [userId], references: [id])
+  lifeArea   LifeArea? @relation(fields: [lifeAreaId], references: [id])
+  tasks      Task[]
+  goals      Goal[]
+}
+
+model Goal {
+  id          String     @id @default(cuid())
+  title       String
+  description String?
+  category    String?
+  status      GoalStatus @default(IN_PROGRESS)
+  progress    Int        @default(0)
+  targetDate  DateTime?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  userId     String
+  lifeAreaId String?
+  user       User      @relation(fields: [userId], references: [id])
+  lifeArea   LifeArea? @relation(fields: [lifeAreaId], references: [id])
+  projectId  String?
+  project    Project?  @relation(fields: [projectId], references: [id])
+  tasks      Task[]
+}
+
+model HealthEntry {
+  id        String   @id @default(cuid())
+  date      DateTime @db.Date
+  sleepHours Float?
+  mood      Int?
+  energy    Int?
+  weight    Float?
+  steps     Int?
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@unique([userId, date])
+}
+
+model DailyLog {
+  id         String   @id @default(cuid())
+  date       DateTime @db.Date
+  reflection String?
+  dailyScore Float?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@unique([userId, date])
+}
+
+model WeeklyReview {
+  id            String   @id @default(cuid())
+  weekStart     DateTime @db.Date
+  wins          String?
+  challenges    String?
+  improvements  String?
+  focusNextWeek String?
+  rating        Int?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@unique([userId, weekStart])
+}
+
+model LifeArea {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  color       String   @default("#6366f1")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  goals    Goal[]
+  projects Project[]
+  metrics  Metric[]
+}
+
+model Metric {
+  id          String   @id @default(cuid())
+  name        String
+  category    String?
+  unit        String
+  targetValue Float?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  userId     String
+  lifeAreaId String?
+  user       User         @relation(fields: [userId], references: [id])
+  lifeArea   LifeArea?    @relation(fields: [lifeAreaId], references: [id])
+  entries    MetricEntry[]
+}
+
+model MetricEntry {
+  id        String   @id @default(cuid())
+  value     Float
+  date      DateTime @db.Date
+  notes     String?
+  createdAt DateTime @default(now())
+
+  metricId String
+  metric   Metric @relation(fields: [metricId], references: [id], onDelete: Cascade)
+
+  @@unique([metricId, date])
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  DONE
+}
+
+enum HabitFreq {
+  DAILY
+  WEEKLY
+}
+
+enum ProjectStatus {
+  ACTIVE
+  PAUSED
+  COMPLETED
+  ARCHIVED
+}
+
+enum GoalStatus {
+  IN_PROGRESS
+  COMPLETED
+  ABANDONED
+}
