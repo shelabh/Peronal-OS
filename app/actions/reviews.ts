@@ -1,22 +1,23 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { db, DEFAULT_USER_ID, ensureDefaultUser } from "@/lib/db";
+import { db } from "@/lib/db";
+import { requireCurrentUserId } from "@/lib/auth/server";
 import { getWeekStart } from "@/lib/utils";
 
 export async function getCurrentWeekReview() {
-  await ensureDefaultUser();
+  const userId = await requireCurrentUserId();
   return db.weeklyReview.findUnique({
     where: {
-      userId_weekStart: { userId: DEFAULT_USER_ID, weekStart: getWeekStart() },
+      userId_weekStart: { userId, weekStart: getWeekStart() },
     },
   });
 }
 
 export async function getAllReviews() {
-  await ensureDefaultUser();
+  const userId = await requireCurrentUserId();
   return db.weeklyReview.findMany({
-    where: { userId: DEFAULT_USER_ID },
+    where: { userId },
     orderBy: { weekStart: "desc" },
   });
 }
@@ -29,11 +30,11 @@ export async function upsertWeeklyReview(data: {
   focusNextWeek?: string;
   rating?: number;
 }) {
-  await ensureDefaultUser();
+  const userId = await requireCurrentUserId();
   const weekStart = data.weekStart ? new Date(data.weekStart) : getWeekStart();
 
   await db.weeklyReview.upsert({
-    where: { userId_weekStart: { userId: DEFAULT_USER_ID, weekStart } },
+    where: { userId_weekStart: { userId, weekStart } },
     update: {
       wins: data.wins,
       challenges: data.challenges,
@@ -42,7 +43,7 @@ export async function upsertWeeklyReview(data: {
       rating: data.rating,
     },
     create: {
-      userId: DEFAULT_USER_ID,
+      userId,
       weekStart,
       wins: data.wins,
       challenges: data.challenges,
@@ -55,23 +56,23 @@ export async function upsertWeeklyReview(data: {
 }
 
 export async function saveDailyReflection(reflection: string) {
-  await ensureDefaultUser();
+  const userId = await requireCurrentUserId();
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
   await db.dailyLog.upsert({
-    where: { userId_date: { userId: DEFAULT_USER_ID, date: today } },
+    where: { userId_date: { userId, date: today } },
     update: { reflection },
-    create: { userId: DEFAULT_USER_ID, date: today, reflection },
+    create: { userId, date: today, reflection },
   });
   revalidatePath("/today");
 }
 
 export async function getTodayReflection() {
-  await ensureDefaultUser();
+  const userId = await requireCurrentUserId();
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   return db.dailyLog.findUnique({
-    where: { userId_date: { userId: DEFAULT_USER_ID, date: today } },
+    where: { userId_date: { userId, date: today } },
   });
 }

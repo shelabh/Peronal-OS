@@ -1,24 +1,25 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { db, DEFAULT_USER_ID, ensureDefaultUser } from "@/lib/db";
+import { db } from "@/lib/db";
+import { requireCurrentUserId } from "@/lib/auth/server";
 import { getTodayDate } from "@/lib/utils";
 
 export async function getTodayHealth() {
-  await ensureDefaultUser();
+  const userId = await requireCurrentUserId();
   return db.healthEntry.findUnique({
-    where: { userId_date: { userId: DEFAULT_USER_ID, date: getTodayDate() } },
+    where: { userId_date: { userId, date: getTodayDate() } },
   });
 }
 
 export async function getRecentHealth(days = 7) {
-  await ensureDefaultUser();
+  const userId = await requireCurrentUserId();
   const from = new Date();
   from.setDate(from.getDate() - days);
   from.setHours(0, 0, 0, 0);
 
   return db.healthEntry.findMany({
-    where: { userId: DEFAULT_USER_ID, date: { gte: from } },
+    where: { userId, date: { gte: from } },
     orderBy: { date: "desc" },
   });
 }
@@ -32,11 +33,11 @@ export async function upsertHealthEntry(data: {
   steps?: number;
   notes?: string;
 }) {
-  await ensureDefaultUser();
+  const userId = await requireCurrentUserId();
   const date = data.date ? new Date(data.date) : getTodayDate();
 
   await db.healthEntry.upsert({
-    where: { userId_date: { userId: DEFAULT_USER_ID, date } },
+    where: { userId_date: { userId, date } },
     update: {
       sleepHours: data.sleepHours,
       mood: data.mood,
@@ -46,7 +47,7 @@ export async function upsertHealthEntry(data: {
       notes: data.notes,
     },
     create: {
-      userId: DEFAULT_USER_ID,
+      userId,
       date,
       sleepHours: data.sleepHours,
       mood: data.mood,

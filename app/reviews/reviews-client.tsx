@@ -1,14 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/page-header";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import { upsertWeeklyReview } from "@/app/actions/reviews";
 import { getWeekStart } from "@/lib/utils";
 import { ChevronDown, ChevronUp, Star, TrendingUp, Clock, Moon, CheckSquare } from "lucide-react";
+import type { WeeklyAnalysisApiResponse, WeeklyAnalysisResponse } from "@/lib/ai";
 
 interface WeeklyReview {
   id: string;
@@ -33,6 +35,21 @@ interface Props {
   weeklyStats: WeeklyStats;
 }
 
+async function fetchWeeklyAnalysis(): Promise<WeeklyAnalysisApiResponse> {
+  const response = await fetch("/api/ai/weekly-analysis", {
+    method: "GET",
+    cache: "no-store",
+  });
+
+  const payload = await response.json();
+
+  if (!response.ok) {
+    throw new Error(payload?.error ?? "Failed to load AI insights.");
+  }
+
+  return payload as WeeklyAnalysisApiResponse;
+}
+
 export function ReviewsClient({ current, allReviews, weeklyStats }: Props) {
   const [wins, setWins] = useState(current?.wins ?? "");
   const [challenges, setChallenges] = useState(current?.challenges ?? "");
@@ -41,6 +58,9 @@ export function ReviewsClient({ current, allReviews, weeklyStats }: Props) {
   const [rating, setRating] = useState<number>(current?.rating ?? 0);
   const [saving, setSaving] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [analysis, setAnalysis] = useState<WeeklyAnalysisResponse | null>(null);
+  const [analysisFallback, setAnalysisFallback] = useState<string | null>(null);
+  const [analysisLoading, setAnalysisLoading] = useState(true);
 
   const weekStart = getWeekStart();
   const weekLabel = weekStart.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
@@ -55,11 +75,69 @@ export function ReviewsClient({ current, allReviews, weeklyStats }: Props) {
     (r) => new Date(r.weekStart).getTime() !== weekStart.getTime()
   );
 
+  async function loadAnalysis() {
+    setAnalysisLoading(true);
+    setAnalysisFallback(null);
+
+    try {
+      const data = await fetchWeeklyAnalysis();
+      setAnalysis(data.analysis);
+      setAnalysisFallback(data.fallback ?? null);
+    } catch (error) {
+      setAnalysis({
+        insights: [],
+        problems: [],
+        recommendations: [],
+        priorities: [],
+      });
+      setAnalysisFallback(
+        error instanceof Error ? error.message : "Failed to load AI insights."
+      );
+    } finally {
+      setAnalysisLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void (async () => {
+      setAnalysisLoading(true);
+      setAnalysisFallback(null);
+
+      try {
+        const data = await fetchWeeklyAnalysis();
+        setAnalysis(data.analysis);
+        setAnalysisFallback(data.fallback ?? null);
+      } catch (error) {
+        setAnalysis({
+          insights: [],
+          problems: [],
+          recommendations: [],
+          priorities: [],
+        });
+        setAnalysisFallback(
+          error instanceof Error ? error.message : "Failed to load AI insights."
+        );
+      } finally {
+        setAnalysisLoading(false);
+      }
+    })();
+  }, []);
+
   const stats = [
     { icon: TrendingUp, label: "Habit Rate", value: `${weeklyStats.habitCompletionRate}%`, color: "text-green-500" },
     { icon: Clock, label: "Deep Work", value: `${weeklyStats.totalDeepWork}h`, color: "text-blue-500" },
     { icon: Moon, label: "Avg Sleep", value: `${weeklyStats.avgSleep}h`, color: "text-indigo-400" },
     { icon: CheckSquare, label: "Tasks Done", value: String(weeklyStats.tasksCompleted), color: "text-orange-500" },
+  ];
+
+  const analysisSections: Array<{
+    key: keyof WeeklyAnalysisResponse;
+    title: string;
+  }> = [
+    { key: "insights", title: "Insights" },
+    { key: "problems", title: "Problems" },
+    { key: "recommendations", title: "Recommendations" },
+    { key: "priorities", title: "Top Priorities" },
   ];
 
   return (
@@ -84,6 +162,68 @@ export function ReviewsClient({ current, allReviews, weeklyStats }: Props) {
                 </div>
               ))}
             </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <CardTitle className="text-base">AI Insights</CardTitle>
+                <CardDescription>
+                  Structured weekly analysis based on your last 7 days of data.
+                </CardDescription>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => void loadAnalysis()}
+                disabled={analysisLoading}
+              >
+                {analysisLoading ? "Loading..." : "Refresh"}
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {analysisFallback && (
+              <div className="rounded-lg border border-dashed px-3 py-2 text-sm text-muted-foreground">
+                {analysisFallback}
+              </div>
+            )}
+
+            {analysisLoading ? (
+              <div className="space-y-2">
+                <div className="h-4 w-32 rounded bg-muted animate-pulse" />
+                <div className="h-16 rounded bg-muted/70 animate-pulse" />
+              </div>
+            ) : analysis && analysisSections.some(({ key }) => analysis[key].length > 0) ? (
+              <div className="space-y-4">
+                {analysisSections.map(({ key, title }) => (
+                  <div key={key}>
+                    <div className="mb-2 flex items-center gap-2">
+                      <p className="text-sm font-semibold">{title}</p>
+                      <Badge variant="outline">{analysis[key].length}</Badge>
+                    </div>
+                    {analysis[key].length > 0 ? (
+                      <ul className="space-y-2">
+                        {analysis[key].map((item) => (
+                          <li key={item} className="rounded-lg bg-muted/50 px-3 py-2 text-sm">
+                            {item}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">No items generated.</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                AI insights will appear here when enough data is available.
+              </p>
+            )}
           </CardContent>
         </Card>
 

@@ -6,25 +6,16 @@ const globalForPrisma = globalThis as unknown as {
 };
 
 function createPrismaClient() {
-  const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! });
+  const connectionString = process.env.DATABASE_URL;
+
+  if (!connectionString) {
+    throw new Error("DATABASE_URL is not configured.");
+  }
+
+  const adapter = new PrismaPg({ connectionString });
   return new PrismaClient({ adapter });
 }
 
 export const db = globalForPrisma.prisma ?? createPrismaClient();
 
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = db;
-
-// Default single-user ID for MVP (no auth)
-export const DEFAULT_USER_ID = "default-user";
-
-export async function ensureDefaultUser() {
-  try {
-    await db.user.upsert({
-      where: { id: DEFAULT_USER_ID },
-      update: {},
-      create: { id: DEFAULT_USER_ID, name: "You" },
-    });
-  } catch {
-    // Race condition: another concurrent request already created the user — safe to ignore
-  }
-}

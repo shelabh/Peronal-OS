@@ -1,14 +1,15 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { db, DEFAULT_USER_ID, ensureDefaultUser } from "@/lib/db";
+import { db } from "@/lib/db";
+import { requireCurrentUserId } from "@/lib/auth/server";
 import { getTodayDate } from "@/lib/utils";
 
 export async function getHabits() {
-  await ensureDefaultUser();
+  const userId = await requireCurrentUserId();
   const today = getTodayDate();
   return db.habit.findMany({
-    where: { userId: DEFAULT_USER_ID },
+    where: { userId },
     orderBy: { createdAt: "asc" },
     include: {
       logs: {
@@ -19,10 +20,10 @@ export async function getHabits() {
 }
 
 export async function createHabit(data: { name: string; description?: string; color?: string }) {
-  await ensureDefaultUser();
+  const userId = await requireCurrentUserId();
   await db.habit.create({
     data: {
-      userId: DEFAULT_USER_ID,
+      userId,
       name: data.name,
       description: data.description,
       color: data.color ?? "#6366f1",
@@ -33,6 +34,16 @@ export async function createHabit(data: { name: string; description?: string; co
 }
 
 export async function toggleHabitLog(habitId: string, date: Date, completed: boolean) {
+  const userId = await requireCurrentUserId();
+  const habit = await db.habit.findFirst({
+    where: { id: habitId, userId },
+    select: { id: true },
+  });
+
+  if (!habit) {
+    throw new Error("Habit not found.");
+  }
+
   const existing = await db.habitLog.findUnique({
     where: { habitId_date: { habitId, date } },
   });
@@ -47,16 +58,34 @@ export async function toggleHabitLog(habitId: string, date: Date, completed: boo
 }
 
 export async function deleteHabit(id: string) {
+  const userId = await requireCurrentUserId();
+  const habit = await db.habit.findFirst({
+    where: { id, userId },
+    select: { id: true },
+  });
+
+  if (!habit) {
+    throw new Error("Habit not found.");
+  }
+
   await db.habitLog.deleteMany({ where: { habitId: id } });
-  await db.habit.delete({ where: { id } });
+  await db.habit.deleteMany({ where: { id, userId } });
   revalidatePath("/habits");
   revalidatePath("/today");
 }
 
 export async function getHabitStats(habitId: string, days = 30) {
+  const userId = await requireCurrentUserId();
   const from = new Date();
   from.setDate(from.getDate() - days);
   from.setHours(0, 0, 0, 0);
+
+  const habit = await db.habit.findFirst({
+    where: { id: habitId, userId },
+    select: { id: true },
+  });
+
+  if (!habit) return 0;
 
   const logs = await db.habitLog.findMany({
     where: { habitId, date: { gte: from }, completed: true },
@@ -66,13 +95,13 @@ export async function getHabitStats(habitId: string, days = 30) {
 
 /** Returns per-day habit completion % for all habits over last N days */
 export async function getHabitDailyStats(days = 14): Promise<{ date: string; pct: number }[]> {
-  await ensureDefaultUser();
+  const userId = await requireCurrentUserId();
   const from = new Date();
   from.setDate(from.getDate() - days);
   from.setHours(0, 0, 0, 0);
 
   const habits = await db.habit.findMany({
-    where: { userId: DEFAULT_USER_ID },
+    where: { userId },
     include: { logs: { where: { date: { gte: from } } } },
   });
 

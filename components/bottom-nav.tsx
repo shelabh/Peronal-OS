@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, CheckSquare, Repeat2, Target, Activity, BookOpen, Settings, LayoutGrid } from "lucide-react";
+import { LayoutDashboard, CheckSquare, Repeat2, Target, Activity, BookOpen, Settings, LayoutGrid, FolderKanban } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
   { href: "/today", icon: LayoutDashboard, label: "Today" },
   { href: "/tasks", icon: CheckSquare, label: "Tasks" },
   { href: "/habits", icon: Repeat2, label: "Habits" },
+  { href: "/projects", icon: FolderKanban, label: "Projects" },
   { href: "/goals", icon: Target, label: "Goals" },
   { href: "/metrics", icon: Activity, label: "Metrics" },
   { href: "/life-areas", icon: LayoutGrid, label: "Areas" },

@@ -11,9 +11,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { createProject, updateProjectProgress, updateProjectStatus, deleteProject } from "@/app/actions/projects";
+import { createProject, updateProject, updateProjectProgress, updateProjectStatus, deleteProject } from "@/app/actions/projects";
 import { ProjectStatus } from "@/lib/constants";
-import { Plus, Trash2, CheckSquare, Target } from "lucide-react";
+import { Pencil, Plus, Trash2, CheckSquare, Target } from "lucide-react";
+
+const NONE_VALUE = "__none__";
 
 interface Project {
   id: string;
@@ -22,7 +24,15 @@ interface Project {
   status: ProjectStatus;
   progress: number;
   dueDate: Date | null;
+  lifeAreaId?: string | null;
+  lifeArea?: { id: string; name: string; color: string } | null;
   _count: { tasks: number; goals: number };
+}
+
+interface LifeAreaOption {
+  id: string;
+  name: string;
+  color: string;
 }
 
 const statusVariant: Record<ProjectStatus, "default" | "secondary" | "outline" | "destructive"> = {
@@ -32,31 +42,86 @@ const statusVariant: Record<ProjectStatus, "default" | "secondary" | "outline" |
   ARCHIVED: "outline",
 };
 
-export function ProjectsClient({ projects: initialProjects }: { projects: Project[] }) {
+function toDateInputValue(value: Date | string | null) {
+  if (!value) return "";
+  return new Date(value).toISOString().slice(0, 10);
+}
+
+export function ProjectsClient({
+  projects: initialProjects,
+  lifeAreas,
+}: {
+  projects: Project[];
+  lifeAreas: LifeAreaOption[];
+}) {
   const [projects, setProjects] = useState(initialProjects);
   const [open, setOpen] = useState(false);
+  const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [dueDate, setDueDate] = useState("");
+  const [lifeAreaId, setLifeAreaId] = useState(NONE_VALUE);
 
-  async function handleCreate() {
-    if (!name.trim()) return;
-    await createProject({ name, description: description || undefined, dueDate: dueDate || undefined });
-    setProjects((prev) => [
-      {
-        id: crypto.randomUUID(),
-        name,
-        description: description || null,
-        status: ProjectStatus.ACTIVE,
-        progress: 0,
-        dueDate: dueDate ? new Date(dueDate) : null,
-        _count: { tasks: 0, goals: 0 },
-      },
-      ...prev,
-    ]);
+  function resetForm() {
+    setEditingProject(null);
     setName("");
     setDescription("");
     setDueDate("");
+    setLifeAreaId(NONE_VALUE);
+  }
+
+  function handleOpenCreate() {
+    resetForm();
+    setOpen(true);
+  }
+
+  function handleOpenEdit(project: Project) {
+    setEditingProject(project);
+    setName(project.name);
+    setDescription(project.description || "");
+    setDueDate(toDateInputValue(project.dueDate));
+    setLifeAreaId(project.lifeAreaId || NONE_VALUE);
+    setOpen(true);
+  }
+
+  async function handleSubmit() {
+    if (!name.trim()) return;
+
+    const selectedLifeAreaId = lifeAreaId === NONE_VALUE ? null : lifeAreaId;
+    const selectedLifeArea = lifeAreas.find((area) => area.id === selectedLifeAreaId) ?? null;
+
+    if (editingProject) {
+      await updateProject(editingProject.id, {
+        name,
+        description: description || null,
+        dueDate: dueDate || null,
+        lifeAreaId: selectedLifeAreaId,
+      });
+      setProjects((prev) =>
+        prev.map((project) =>
+          project.id === editingProject.id
+            ? {
+                ...project,
+                name,
+                description: description || null,
+                dueDate: dueDate ? new Date(dueDate) : null,
+                lifeAreaId: selectedLifeAreaId,
+                lifeArea: selectedLifeArea,
+              }
+            : project
+        )
+      );
+    } else {
+      const project = await createProject({
+        name,
+        description: description || undefined,
+        dueDate: dueDate || undefined,
+        lifeAreaId: selectedLifeAreaId,
+      });
+      setProjects((prev) => [project, ...prev]);
+    }
+
+    resetForm();
     setOpen(false);
   }
 
@@ -81,7 +146,7 @@ export function ProjectsClient({ projects: initialProjects }: { projects: Projec
         title="Projects"
         description={`${projects.filter((p) => p.status === ProjectStatus.ACTIVE).length} active`}
         action={
-          <Button size="sm" onClick={() => setOpen(true)}>
+          <Button size="sm" onClick={handleOpenCreate}>
             <Plus className="h-4 w-4 mr-1" /> New
           </Button>
         }
@@ -101,11 +166,19 @@ export function ProjectsClient({ projects: initialProjects }: { projects: Projec
                   {project.description && (
                     <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{project.description}</p>
                   )}
+                  {project.lifeArea && (
+                    <Badge variant="outline" className="text-xs mt-2">
+                      {project.lifeArea.name}
+                    </Badge>
+                  )}
                 </div>
                 <div className="flex items-center gap-2 ml-2 shrink-0">
                   <Badge variant={statusVariant[project.status]} className="text-xs capitalize">
                     {project.status.toLowerCase()}
                   </Badge>
+                  <button onClick={() => handleOpenEdit(project)} className="text-muted-foreground hover:text-foreground transition-colors">
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
                   <button onClick={() => handleDelete(project.id)} className="text-muted-foreground hover:text-destructive transition-colors">
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
@@ -158,7 +231,7 @@ export function ProjectsClient({ projects: initialProjects }: { projects: Projec
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>New Project</DialogTitle>
+            <DialogTitle>{editingProject ? "Edit Project" : "New Project"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-1.5">
@@ -173,10 +246,24 @@ export function ProjectsClient({ projects: initialProjects }: { projects: Projec
               <Label>Target Date (optional)</Label>
               <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
             </div>
+            <div className="space-y-1.5">
+              <Label>Life Area (optional)</Label>
+              <Select value={lifeAreaId} onValueChange={setLifeAreaId}>
+                <SelectTrigger><SelectValue placeholder="No life area" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NONE_VALUE}>No life area</SelectItem>
+                  {lifeAreas.map((area) => (
+                    <SelectItem key={area.id} value={area.id}>{area.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button onClick={handleCreate} disabled={!name.trim()}>Create</Button>
+            <Button onClick={handleSubmit} disabled={!name.trim()}>
+              {editingProject ? "Save" : "Create"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

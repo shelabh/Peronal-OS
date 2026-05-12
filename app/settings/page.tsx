@@ -1,8 +1,14 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { PageHeader } from "@/components/page-header";
-import { Database, Smartphone, Info } from "lucide-react";
+import { Database, Smartphone, Info, Shield } from "lucide-react";
+import { getCurrentSession } from "@/lib/auth/server";
+import { SignOutButton } from "./sign-out-button";
 
-export default function SettingsPage() {
+export const dynamic = "force-dynamic";
+
+export default async function SettingsPage() {
+  const session = await getCurrentSession();
+
   return (
     <div>
       <PageHeader title="Settings" description="App configuration" />
@@ -10,15 +16,32 @@ export default function SettingsPage() {
         <Card>
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
+              <Shield className="h-4 w-4" /> Account
+            </CardTitle>
+            <CardDescription>
+              Signed in with Neon Auth
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              {session?.user?.email ?? session?.user?.name ?? "Signed-in user"}
+            </p>
+            <SignOutButton />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
               <Database className="h-4 w-4" /> Database
             </CardTitle>
             <CardDescription>
-              Connect your PostgreSQL database by setting the <code className="text-xs bg-muted px-1 rounded">DATABASE_URL</code> environment variable.
+              Connect your Neon Postgres database by setting the <code className="text-xs bg-muted px-1 rounded">DATABASE_URL</code> and <code className="text-xs bg-muted px-1 rounded">DIRECT_URL</code> environment variables.
             </CardDescription>
           </CardHeader>
           <CardContent>
             <p className="text-xs text-muted-foreground">
-              Run <code className="bg-muted px-1 rounded">pnpm exec prisma migrate dev</code> after configuring the database.
+              Use the pooled Neon connection for <code className="bg-muted px-1 rounded">DATABASE_URL</code> and the direct connection for Prisma migrations.
             </p>
           </CardContent>
         </Card>
@@ -49,7 +72,7 @@ export default function SettingsPage() {
           <CardContent>
             <div className="space-y-1 text-sm text-muted-foreground">
               <p>Personal OS — MVP v0.1.0</p>
-              <p>Stack: Next.js · TypeScript · TailwindCSS · Prisma · PostgreSQL</p>
+              <p>Stack: Next.js · TypeScript · TailwindCSS · Prisma · Neon Postgres · Neon Auth</p>
             </div>
           </CardContent>
         </Card>

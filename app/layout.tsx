@@ -1,8 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist } from "next/font/google";
 import "./globals.css";
-import { BottomNav } from "@/components/bottom-nav";
-import { QuickEntry } from "@/components/quick-entry";
+import { AppShell } from "@/components/app-shell";
 import { ServiceWorkerRegistrar } from "@/components/sw-registrar";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-geist-sans" });
@@ -25,14 +24,14 @@ export const viewport: Viewport = {
   maximumScale: 1,
 };
 
+export const dynamic = "force-dynamic";
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <body className={`${geist.variable} antialiased min-h-screen bg-background`}>
         <ServiceWorkerRegistrar />
-        <main className="max-w-lg mx-auto pb-20 min-h-screen">{children}</main>
-        <QuickEntry />
-        <BottomNav />
+        <AppShell>{children}</AppShell>
       </body>
     </html>
   );

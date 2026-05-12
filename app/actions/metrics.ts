@@ -1,13 +1,14 @@
 "use server";
 
-import { db, DEFAULT_USER_ID, ensureDefaultUser } from "@/lib/db";
+import { db } from "@/lib/db";
+import { requireCurrentUserId } from "@/lib/auth/server";
 import { revalidatePath } from "next/cache";
 import { getTodayDate } from "@/lib/utils";
 
 export async function getMetrics() {
-  await ensureDefaultUser();
+  const userId = await requireCurrentUserId();
   return db.metric.findMany({
-    where: { userId: DEFAULT_USER_ID },
+    where: { userId },
     include: {
       lifeArea: true,
       entries: {
@@ -26,15 +27,16 @@ export async function createMetric(data: {
   targetValue?: number;
   lifeAreaId?: string;
 }) {
-  await ensureDefaultUser();
+  const userId = await requireCurrentUserId();
   await db.metric.create({
-    data: { ...data, userId: DEFAULT_USER_ID },
+    data: { ...data, userId },
   });
   revalidatePath("/metrics");
 }
 
 export async function deleteMetric(id: string) {
-  await db.metric.delete({ where: { id } });
+  const userId = await requireCurrentUserId();
+  await db.metric.deleteMany({ where: { id, userId } });
   revalidatePath("/metrics");
 }
 
@@ -44,7 +46,18 @@ export async function logMetricEntry(data: {
   date?: Date;
   notes?: string;
 }) {
+  const userId = await requireCurrentUserId();
   const date = data.date ?? getTodayDate();
+
+  const metric = await db.metric.findFirst({
+    where: { id: data.metricId, userId },
+    select: { id: true },
+  });
+
+  if (!metric) {
+    throw new Error("Metric not found.");
+  }
+
   await db.metricEntry.upsert({
     where: { metricId_date: { metricId: data.metricId, date } },
     create: { metricId: data.metricId, value: data.value, date, notes: data.notes },
@@ -55,10 +68,10 @@ export async function logMetricEntry(data: {
 }
 
 export async function getTodayMetrics() {
-  await ensureDefaultUser();
+  const userId = await requireCurrentUserId();
   const today = getTodayDate();
   const metrics = await db.metric.findMany({
-    where: { userId: DEFAULT_USER_ID },
+    where: { userId },
     include: {
       entries: {
         where: { date: today },
@@ -71,8 +84,17 @@ export async function getTodayMetrics() {
 }
 
 export async function getMetricTrend(metricId: string, days = 30) {
+  const userId = await requireCurrentUserId();
   const since = new Date();
   since.setDate(since.getDate() - days);
+
+  const metric = await db.metric.findFirst({
+    where: { id: metricId, userId },
+    select: { id: true },
+  });
+
+  if (!metric) return [];
+
   return db.metricEntry.findMany({
     where: { metricId, date: { gte: since } },
     orderBy: { date: "asc" },

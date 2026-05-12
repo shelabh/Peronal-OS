@@ -10,9 +10,11 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { createTask, updateTaskStatus, deleteTask } from "@/app/actions/tasks";
+import { createTask, updateTask, updateTaskStatus, deleteTask } from "@/app/actions/tasks";
 import { Priority, TaskStatus } from "@/lib/constants";
-import { Plus, Trash2 } from "lucide-react";
+import { Pencil, Plus, Trash2 } from "lucide-react";
+
+const NONE_VALUE = "__none__";
 
 interface Task {
   id: string;
@@ -21,14 +23,44 @@ interface Task {
   priority: Priority;
   status: TaskStatus;
   dueDate: Date | null;
+  projectId?: string | null;
+  goalId?: string | null;
+  project?: { id: string; name: string } | null;
+  goal?: { id: string; title: string } | null;
 }
 
-export function TasksClient({ tasks: initialTasks }: { tasks: Task[] }) {
+interface ProjectOption {
+  id: string;
+  name: string;
+}
+
+interface GoalOption {
+  id: string;
+  title: string;
+}
+
+function toDateInputValue(value: Date | string | null) {
+  if (!value) return "";
+  return new Date(value).toISOString().slice(0, 10);
+}
+
+export function TasksClient({
+  tasks: initialTasks,
+  projects,
+  goals,
+}: {
+  tasks: Task[];
+  projects: ProjectOption[];
+  goals: GoalOption[];
+}) {
   const [tasks, setTasks] = useState(initialTasks);
   const [open, setOpen] = useState(false);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [title, setTitle] = useState("");
   const [priority, setPriority] = useState<Priority>(Priority.MEDIUM);
   const [dueDate, setDueDate] = useState("");
+  const [projectId, setProjectId] = useState(NONE_VALUE);
+  const [goalId, setGoalId] = useState(NONE_VALUE);
 
   const grouped = {
     HIGH: tasks.filter((t) => t.priority === Priority.HIGH && t.status !== TaskStatus.DONE),
@@ -37,16 +69,74 @@ export function TasksClient({ tasks: initialTasks }: { tasks: Task[] }) {
     DONE: tasks.filter((t) => t.status === TaskStatus.DONE),
   };
 
-  async function handleCreate() {
-    if (!title.trim()) return;
-    await createTask({ title, priority, dueDate: dueDate || undefined });
-    setTasks((prev) => [
-      { id: crypto.randomUUID(), title, description: null, priority, status: TaskStatus.TODO, dueDate: dueDate ? new Date(dueDate) : null },
-      ...prev,
-    ]);
+  function resetForm() {
+    setEditingTask(null);
     setTitle("");
     setPriority(Priority.MEDIUM);
     setDueDate("");
+    setProjectId(NONE_VALUE);
+    setGoalId(NONE_VALUE);
+  }
+
+  function handleOpenCreate() {
+    resetForm();
+    setOpen(true);
+  }
+
+  function handleOpenEdit(task: Task) {
+    setEditingTask(task);
+    setTitle(task.title);
+    setPriority(task.priority);
+    setDueDate(toDateInputValue(task.dueDate));
+    setProjectId(task.projectId || NONE_VALUE);
+    setGoalId(task.goalId || NONE_VALUE);
+    setOpen(true);
+  }
+
+  async function handleSubmit() {
+    if (!title.trim()) return;
+
+    const selectedProjectId = projectId === NONE_VALUE ? null : projectId;
+    const selectedGoalId = goalId === NONE_VALUE ? null : goalId;
+    const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? null;
+    const selectedGoal = goals.find((goal) => goal.id === selectedGoalId) ?? null;
+
+    if (editingTask) {
+      await updateTask(editingTask.id, {
+        title,
+        priority,
+        dueDate: dueDate || null,
+        projectId: selectedProjectId,
+        goalId: selectedGoalId,
+      });
+      setTasks((prev) =>
+        prev.map((task) =>
+          task.id === editingTask.id
+            ? {
+                ...task,
+                title,
+                priority,
+                dueDate: dueDate ? new Date(dueDate) : null,
+                projectId: selectedProjectId,
+                goalId: selectedGoalId,
+                project: selectedProject,
+                goal: selectedGoal,
+              }
+            : task
+        )
+      );
+    } else {
+      const task = await createTask({
+        title,
+        priority,
+        dueDate: dueDate || undefined,
+        projectId: selectedProjectId,
+        goalId: selectedGoalId,
+      });
+      setTasks((prev) => [task, ...prev]);
+    }
+
+    resetForm();
     setOpen(false);
   }
 
@@ -70,7 +160,7 @@ export function TasksClient({ tasks: initialTasks }: { tasks: Task[] }) {
         title="Tasks"
         description={`${tasks.filter((t) => t.status !== TaskStatus.DONE).length} remaining`}
         action={
-          <Button size="sm" onClick={() => setOpen(true)}>
+          <Button size="sm" onClick={handleOpenCreate}>
             <Plus className="h-4 w-4 mr-1" /> Add Task
           </Button>
         }
@@ -90,8 +180,23 @@ export function TasksClient({ tasks: initialTasks }: { tasks: Task[] }) {
                       checked={task.status === TaskStatus.DONE}
                       onCheckedChange={() => handleToggle(task.id, task.status)}
                     />
-                    <span className="text-sm flex-1">{task.title}</span>
+                    <div className="flex-1 min-w-0">
+                      <span className="text-sm">{task.title}</span>
+                      {(task.project || task.goal) && (
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {task.project && (
+                            <Badge variant="outline" className="text-[10px]">Project: {task.project.name}</Badge>
+                          )}
+                          {task.goal && (
+                            <Badge variant="secondary" className="text-[10px]">Goal: {task.goal.title}</Badge>
+                          )}
+                        </div>
+                      )}
+                    </div>
                     <Badge variant={priorityVariant[p]} className="text-xs shrink-0">{p}</Badge>
+                    <button onClick={() => handleOpenEdit(task)} className="text-muted-foreground hover:text-foreground transition-colors">
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
                     <button onClick={() => handleDelete(task.id)} className="text-muted-foreground hover:text-destructive transition-colors">
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
@@ -109,7 +214,22 @@ export function TasksClient({ tasks: initialTasks }: { tasks: Task[] }) {
               {grouped.DONE.map((task) => (
                 <div key={task.id} className="flex items-center gap-3">
                   <Checkbox checked onCheckedChange={() => handleToggle(task.id, task.status)} />
-                  <span className="text-sm flex-1 line-through text-muted-foreground">{task.title}</span>
+                  <div className="flex-1 min-w-0">
+                    <span className="text-sm line-through text-muted-foreground">{task.title}</span>
+                    {(task.project || task.goal) && (
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {task.project && (
+                          <Badge variant="outline" className="text-[10px]">Project: {task.project.name}</Badge>
+                        )}
+                        {task.goal && (
+                          <Badge variant="secondary" className="text-[10px]">Goal: {task.goal.title}</Badge>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <button onClick={() => handleOpenEdit(task)} className="text-muted-foreground hover:text-foreground transition-colors">
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
                   <button onClick={() => handleDelete(task.id)} className="text-muted-foreground hover:text-destructive transition-colors">
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
@@ -127,7 +247,7 @@ export function TasksClient({ tasks: initialTasks }: { tasks: Task[] }) {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>New Task</DialogTitle>
+            <DialogTitle>{editingTask ? "Edit Task" : "New Task"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-1.5">
@@ -149,10 +269,36 @@ export function TasksClient({ tasks: initialTasks }: { tasks: Task[] }) {
               <Label>Due Date (optional)</Label>
               <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
             </div>
+            <div className="space-y-1.5">
+              <Label>Project (optional)</Label>
+              <Select value={projectId} onValueChange={setProjectId}>
+                <SelectTrigger><SelectValue placeholder="No project" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NONE_VALUE}>No project</SelectItem>
+                  {projects.map((project) => (
+                    <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Goal (optional)</Label>
+              <Select value={goalId} onValueChange={setGoalId}>
+                <SelectTrigger><SelectValue placeholder="No goal" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NONE_VALUE}>No goal</SelectItem>
+                  {goals.map((goal) => (
+                    <SelectItem key={goal.id} value={goal.id}>{goal.title}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button onClick={handleCreate} disabled={!title.trim()}>Create</Button>
+            <Button onClick={handleSubmit} disabled={!title.trim()}>
+              {editingTask ? "Save" : "Create"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

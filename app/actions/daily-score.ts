@@ -1,6 +1,7 @@
 "use server";
 
-import { db, DEFAULT_USER_ID, ensureDefaultUser } from "@/lib/db";
+import { db } from "@/lib/db";
+import { requireCurrentUserId } from "@/lib/auth/server";
 import { getTodayDate, getWeekStart } from "@/lib/utils";
 import { revalidatePath } from "next/cache";
 
@@ -12,25 +13,25 @@ import { revalidatePath } from "next/cache";
  *   tasks_completed   * 3  (each task = 3pts, capped at 15)
  */
 export async function computeAndStoreDailyScore(date?: Date): Promise<number> {
-  await ensureDefaultUser();
+  const userId = await requireCurrentUserId();
   const day = date ?? getTodayDate();
 
   // Fetch deep work metric entry for today
   const deepWorkMetric = await db.metric.findFirst({
-    where: { userId: DEFAULT_USER_ID, name: { contains: "deep_work", mode: "insensitive" } },
+    where: { userId, name: { contains: "deep_work", mode: "insensitive" } },
     include: { entries: { where: { date: day }, take: 1 } },
   });
   const deepWorkHours = deepWorkMetric?.entries[0]?.value ?? 0;
 
   // Sleep from HealthEntry
   const health = await db.healthEntry.findUnique({
-    where: { userId_date: { userId: DEFAULT_USER_ID, date: day } },
+    where: { userId_date: { userId, date: day } },
   });
   const sleepHours = health?.sleepHours ?? 0;
 
   // Habits completed today
   const habits = await db.habit.findMany({
-    where: { userId: DEFAULT_USER_ID },
+    where: { userId },
     include: { logs: { where: { date: day, completed: true } } },
   });
   const habitsCompleted = habits.filter((h) => h.logs.length > 0).length;
@@ -38,7 +39,7 @@ export async function computeAndStoreDailyScore(date?: Date): Promise<number> {
   // Tasks completed today
   const tasksCompleted = await db.task.count({
     where: {
-      userId: DEFAULT_USER_ID,
+      userId,
       status: "DONE",
       completedAt: { gte: day, lt: new Date(day.getTime() + 86400000) },
     },
@@ -55,8 +56,8 @@ export async function computeAndStoreDailyScore(date?: Date): Promise<number> {
   );
 
   await db.dailyLog.upsert({
-    where: { userId_date: { userId: DEFAULT_USER_ID, date: day } },
-    create: { userId: DEFAULT_USER_ID, date: day, dailyScore: score },
+    where: { userId_date: { userId, date: day } },
+    create: { userId, date: day, dailyScore: score },
     update: { dailyScore: score },
   });
 
@@ -65,22 +66,22 @@ export async function computeAndStoreDailyScore(date?: Date): Promise<number> {
 }
 
 export async function getTodayScore(): Promise<number | null> {
-  await ensureDefaultUser();
+  const userId = await requireCurrentUserId();
   const day = getTodayDate();
   const log = await db.dailyLog.findUnique({
-    where: { userId_date: { userId: DEFAULT_USER_ID, date: day } },
+    where: { userId_date: { userId, date: day } },
   });
   return log?.dailyScore ?? null;
 }
 
 export async function getWeeklyStats() {
-  await ensureDefaultUser();
+  const userId = await requireCurrentUserId();
   const weekStart = getWeekStart();
   const weekEnd = new Date(weekStart.getTime() + 7 * 86400000);
 
   // Habit completion rate this week
   const habits = await db.habit.findMany({
-    where: { userId: DEFAULT_USER_ID },
+    where: { userId },
     include: {
       logs: {
         where: { date: { gte: weekStart, lt: weekEnd }, completed: true },
@@ -95,14 +96,14 @@ export async function getWeeklyStats() {
 
   // Deep work total
   const deepWorkMetric = await db.metric.findFirst({
-    where: { userId: DEFAULT_USER_ID, name: { contains: "deep_work", mode: "insensitive" } },
+    where: { userId, name: { contains: "deep_work", mode: "insensitive" } },
     include: { entries: { where: { date: { gte: weekStart, lt: weekEnd } } } },
   });
   const totalDeepWork = deepWorkMetric?.entries.reduce((sum, e) => sum + e.value, 0) ?? 0;
 
   // Average sleep
   const healthEntries = await db.healthEntry.findMany({
-    where: { userId: DEFAULT_USER_ID, date: { gte: weekStart, lt: weekEnd } },
+    where: { userId, date: { gte: weekStart, lt: weekEnd } },
   });
   const sleepEntries = healthEntries.filter((e) => e.sleepHours != null);
   const avgSleep = sleepEntries.length > 0
@@ -112,7 +113,7 @@ export async function getWeeklyStats() {
   // Tasks completed
   const tasksCompleted = await db.task.count({
     where: {
-      userId: DEFAULT_USER_ID,
+      userId,
       status: "DONE",
       completedAt: { gte: weekStart, lt: weekEnd },
     },

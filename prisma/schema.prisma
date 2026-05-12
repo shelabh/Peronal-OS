@@ -21,6 +21,8 @@ model User {
   dailyLogs     DailyLog[]
   weeklyReviews WeeklyReview[]
   metrics       Metric[]
+  memories      Memory[]
+  lifeAreas     LifeArea[]
 }
 
 model Task {
@@ -164,6 +166,9 @@ model LifeArea {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
   goals    Goal[]
   projects Project[]
   metrics  Metric[]
@@ -198,6 +203,18 @@ model MetricEntry {
   @@unique([metricId, date])
 }
 
+model Memory {
+  id         String     @id @default(cuid())
+  type       MemoryType
+  content    String
+  confidence Float      @default(0.7)
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+}
+
 enum Priority {
   LOW
   MEDIUM
@@ -226,4 +243,10 @@ enum GoalStatus {
   IN_PROGRESS
   COMPLETED
   ABANDONED
+}
+
+enum MemoryType {
+  INSIGHT
+  PREFERENCE
+  STRATEGY
 }

@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useEffect, useState } from "react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
@@ -13,6 +13,7 @@ import { computeAndStoreDailyScore } from "@/app/actions/daily-score";
 import { getTodayDate } from "@/lib/utils";
 import { TaskStatus, Priority } from "@/lib/constants";
 import { Moon, Smile, Zap, Activity, RefreshCw } from "lucide-react";
+import type { DailyPlanApiResponse, DailyPlanResponse } from "@/lib/ai";
 
 interface MetricEntry {
   value: number;
@@ -41,6 +42,21 @@ interface Props {
   dailyScore: number | null;
 }
 
+async function fetchDailyPlan(): Promise<DailyPlanApiResponse> {
+  const response = await fetch("/api/ai/daily-plan", {
+    method: "GET",
+    cache: "no-store",
+  });
+
+  const payload = await response.json();
+
+  if (!response.ok) {
+    throw new Error(payload?.error ?? "Failed to load AI daily plan.");
+  }
+
+  return payload as DailyPlanApiResponse;
+}
+
 export function TodayClient({
   tasks,
   habits,
@@ -53,6 +69,9 @@ export function TodayClient({
   const [saving, setSaving] = useState(false);
   const [score, setScore] = useState<number | null>(initialScore);
   const [recalculating, setRecalculating] = useState(false);
+  const [dailyPlan, setDailyPlan] = useState<DailyPlanResponse | null>(null);
+  const [planFallback, setPlanFallback] = useState<string | null>(null);
+  const [planLoading, setPlanLoading] = useState(true);
   const today = new Date();
 
   const dateLabel = today.toLocaleDateString("en-US", {
@@ -83,6 +102,56 @@ export function TodayClient({
     setRecalculating(false);
   }
 
+  async function loadDailyPlan() {
+    setPlanLoading(true);
+    setPlanFallback(null);
+
+    try {
+      const data = await fetchDailyPlan();
+      setDailyPlan(data.plan);
+      setPlanFallback(data.fallback ?? null);
+    } catch (error) {
+      setDailyPlan({
+        priorities: [],
+        tasks: [],
+        focusBlocks: [],
+        habits: [],
+        warnings: [],
+      });
+      setPlanFallback(
+        error instanceof Error ? error.message : "Failed to load AI daily plan."
+      );
+    } finally {
+      setPlanLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void (async () => {
+      setPlanLoading(true);
+      setPlanFallback(null);
+
+      try {
+        const data = await fetchDailyPlan();
+        setDailyPlan(data.plan);
+        setPlanFallback(data.fallback ?? null);
+      } catch (error) {
+        setDailyPlan({
+          priorities: [],
+          tasks: [],
+          focusBlocks: [],
+          habits: [],
+          warnings: [],
+        });
+        setPlanFallback(
+          error instanceof Error ? error.message : "Failed to load AI daily plan."
+        );
+      } finally {
+        setPlanLoading(false);
+      }
+    })();
+  }, []);
+
   const priorityColor: Record<Priority, string> = {
     HIGH: "destructive",
     MEDIUM: "secondary",
@@ -95,6 +164,13 @@ export function TodayClient({
     : score >= 70 ? "text-green-500"
     : score >= 40 ? "text-yellow-500"
     : "text-red-500";
+  const hasPlanContent = dailyPlan
+    ? dailyPlan.priorities.length > 0 ||
+      dailyPlan.tasks.length > 0 ||
+      dailyPlan.focusBlocks.length > 0 ||
+      dailyPlan.habits.length > 0 ||
+      dailyPlan.warnings.length > 0
+    : false;
 
   return (
     <div className="px-4 pt-6 space-y-4">
@@ -107,7 +183,7 @@ export function TodayClient({
         <button
           onClick={handleRecalcScore}
           disabled={recalculating}
-          className="flex flex-col items-center justify-center bg-muted rounded-xl px-3 py-2 min-w-18 hover:bg-muted/80 transition-colors"
+          className="flex flex-row items-center gap-1 justify-center bg-muted rounded-xl px-3 py-2 min-w-18 hover:bg-muted/80 transition-colors"
           title="Recalculate score"
         >
           {recalculating ? (
@@ -117,13 +193,129 @@ export function TodayClient({
               <span className={`text-xl font-bold ${scoreColor}`}>
                 {score ?? "—"}
               </span>
-              <span className="text-[10px] text-muted-foreground leading-none mt-0.5">/ 100</span>
             </>
           )}
+          <span className="text-[10px] text-muted-foreground leading-none mt-0.5">/ 100</span>
           <span className="text-[9px] text-muted-foreground mt-1 uppercase tracking-wide">Score</span>
         </button>
       </div>
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <CardTitle className="text-base">AI Plan</CardTitle>
+              <CardDescription>
+                Practical guidance for what to do today based on your context and recent patterns.
+              </CardDescription>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => void loadDailyPlan()}
+              disabled={planLoading}
+            >
+              {planLoading ? "Loading..." : "Refresh"}
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {planFallback && (
+            <div className="rounded-lg border border-dashed px-3 py-2 text-sm text-muted-foreground">
+              {planFallback}
+            </div>
+          )}
 
+          {planLoading ? (
+            <div className="space-y-2">
+              <div className="h-4 w-28 rounded bg-muted animate-pulse" />
+              <div className="h-16 rounded bg-muted/70 animate-pulse" />
+            </div>
+          ) : hasPlanContent && dailyPlan ? (
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <p className="text-sm font-semibold">Priorities</p>
+                {dailyPlan.priorities.length > 0 ? (
+                  <ul className="space-y-2">
+                    {dailyPlan.priorities.map((item) => (
+                      <li key={item} className="rounded-lg bg-muted/50 px-3 py-2 text-sm">
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No priorities generated.</p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-sm font-semibold">Tasks</p>
+                {dailyPlan.tasks.length > 0 ? (
+                  <ul className="space-y-2">
+                    {dailyPlan.tasks.map((item) => (
+                      <li key={item} className="rounded-lg bg-muted/50 px-3 py-2 text-sm">
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No recommended tasks generated.</p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-sm font-semibold">Focus Blocks</p>
+                {dailyPlan.focusBlocks.length > 0 ? (
+                  <ul className="space-y-2">
+                    {dailyPlan.focusBlocks.map((item) => (
+                      <li key={item} className="rounded-lg bg-muted/50 px-3 py-2 text-sm">
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No focus blocks generated.</p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-sm font-semibold">Habits</p>
+                {dailyPlan.habits.length > 0 ? (
+                  <ul className="space-y-2">
+                    {dailyPlan.habits.map((item) => (
+                      <li key={item} className="rounded-lg bg-muted/50 px-3 py-2 text-sm">
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No habit reminders generated.</p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-sm font-semibold">Warnings</p>
+                {dailyPlan.warnings.length > 0 ? (
+                  <ul className="space-y-2">
+                    {dailyPlan.warnings.map((item) => (
+                      <li key={item} className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-950">
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No warnings right now.</p>
+                )}
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              AI planning will appear here when enough task, goal, project, or health data is available.
+            </p>
+          )}
+        </CardContent>
+      </Card>
+    <div className="grid grid-cols-2 gap-10 ">
       {/* Today's Tasks */}
       <Card>
         <CardHeader className="pb-3">
@@ -286,6 +478,7 @@ export function TodayClient({
           </Button>
         </CardContent>
       </Card>
+      </div>
     </div>
   );
 }
