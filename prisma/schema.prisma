@@ -23,6 +23,7 @@ model User {
   metrics       Metric[]
   memories      Memory[]
   lifeAreas     LifeArea[]
+  experiments   Experiment[]
 }
 
 model Task {
@@ -48,20 +49,30 @@ model Habit {
   id          String      @id @default(cuid())
   name        String
   description String?
+  habitType   HabitType   @default(BINARY)
   frequency   HabitFreq   @default(DAILY)
+  cadenceRule String?
   color       String      @default("#6366f1")
+  targetValue Float?
+  unit        String?
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
 
-  userId String
-  user   User       @relation(fields: [userId], references: [id])
-  logs   HabitLog[]
+  userId     String
+  lifeAreaId String?
+  goalId     String?
+  user       User      @relation(fields: [userId], references: [id])
+  lifeArea   LifeArea? @relation(fields: [lifeAreaId], references: [id])
+  goal       Goal?     @relation(fields: [goalId], references: [id])
+  logs       HabitLog[]
 }
 
 model HabitLog {
   id        String   @id @default(cuid())
   date      DateTime @db.Date
   completed Boolean  @default(false)
+  status    HabitLogStatus @default(MISSED)
+  value     Float?
   note      String?
   createdAt DateTime @default(now())
 
@@ -87,6 +98,8 @@ model Project {
   lifeArea   LifeArea? @relation(fields: [lifeAreaId], references: [id])
   tasks      Task[]
   goals      Goal[]
+  metrics    Metric[]
+  milestones ProjectMilestone[]
 }
 
 model Goal {
@@ -107,6 +120,8 @@ model Goal {
   projectId  String?
   project    Project?  @relation(fields: [projectId], references: [id])
   tasks      Task[]
+  habits     Habit[]
+  metrics    Metric[]
 }
 
 model HealthEntry {
@@ -132,6 +147,12 @@ model DailyLog {
   date       DateTime @db.Date
   reflection String?
   dailyScore Float?
+  stress     Int?
+  cravings   Int?
+  recovery   Int?
+  socialQuality      Int?
+  environmentQuality Int?
+  focusFriction      Int?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
@@ -170,6 +191,7 @@ model LifeArea {
   user   User   @relation(fields: [userId], references: [id])
 
   goals    Goal[]
+  habits   Habit[]
   projects Project[]
   metrics  Metric[]
 }
@@ -180,14 +202,22 @@ model Metric {
   category    String?
   unit        String
   targetValue Float?
+  direction   MetricDirection @default(INCREASE)
+  signalRole  MetricSignalRole @default(BEHAVIOR)
+  includeInInsights Boolean @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   userId     String
   lifeAreaId String?
+  goalId     String?
+  projectId  String?
   user       User         @relation(fields: [userId], references: [id])
   lifeArea   LifeArea?    @relation(fields: [lifeAreaId], references: [id])
+  goal       Goal?        @relation(fields: [goalId], references: [id])
+  project    Project?     @relation(fields: [projectId], references: [id])
   entries    MetricEntry[]
+  experiments Experiment[]
 }
 
 model MetricEntry {
@@ -215,6 +245,47 @@ model Memory {
   user   User   @relation(fields: [userId], references: [id])
 }
 
+model Experiment {
+  id                 String           @id @default(cuid())
+  title              String
+  hypothesis         String
+  status             ExperimentStatus @default(ACTIVE)
+  relatedPatternKey  String?
+  startDate          DateTime         @db.Date
+  endDate            DateTime?        @db.Date
+  reviewDate         DateTime?        @db.Date
+  actions            Json
+  successCriteria    Json?
+  outcomeSummary     String?
+  effectivenessScore Int?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  userId         String
+  targetMetricId String?
+  user           User    @relation(fields: [userId], references: [id])
+  targetMetric   Metric? @relation(fields: [targetMetricId], references: [id], onDelete: SetNull)
+
+  @@index([userId, status])
+}
+
+model ProjectMilestone {
+  id          String                 @id @default(cuid())
+  title       String
+  notes       String?
+  status      ProjectMilestoneStatus @default(TODO)
+  dueDate     DateTime?
+  completedAt DateTime?
+  orderIndex  Int                    @default(0)
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, orderIndex])
+}
+
 enum Priority {
   LOW
   MEDIUM
@@ -232,6 +303,18 @@ enum HabitFreq {
   WEEKLY
 }
 
+enum HabitType {
+  BINARY
+  QUANTITY
+  THRESHOLD
+}
+
+enum HabitLogStatus {
+  MISSED
+  PARTIAL
+  DONE
+}
+
 enum ProjectStatus {
   ACTIVE
   PAUSED
@@ -245,8 +328,33 @@ enum GoalStatus {
   ABANDONED
 }
 
+enum MetricDirection {
+  INCREASE
+  DECREASE
+  MAINTAIN
+}
+
+enum MetricSignalRole {
+  BEHAVIOR
+  STATE
+  OUTCOME
+  RISK
+}
+
 enum MemoryType {
   INSIGHT
   PREFERENCE
   STRATEGY
+}
+
+enum ExperimentStatus {
+  ACTIVE
+  COMPLETED
+  ABANDONED
+}
+
+enum ProjectMilestoneStatus {
+  TODO
+  IN_PROGRESS
+  DONE
 }

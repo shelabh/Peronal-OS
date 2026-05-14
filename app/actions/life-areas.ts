@@ -25,13 +25,15 @@ export async function createLifeArea(data: {
 }) {
   const userId = await requireCurrentUserId();
 
-  await db.lifeArea.create({
+  const area = await db.lifeArea.create({
     data: {
       ...data,
       userId,
     },
   });
   revalidatePath("/life-areas");
+  revalidatePath("/reviews");
+  return area;
 }
 
 export async function deleteLifeArea(id: string) {

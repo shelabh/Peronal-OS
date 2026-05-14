@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requireCurrentUserId } from "@/lib/auth/server";
-import { getWeekStart } from "@/lib/utils";
+import { getTodayDate, getWeekStart } from "@/lib/utils";
 
 export async function getCurrentWeekReview() {
   const userId = await requireCurrentUserId();
@@ -56,22 +56,53 @@ export async function upsertWeeklyReview(data: {
 }
 
 export async function saveDailyReflection(reflection: string) {
+  await upsertDailyCheckInContext({ reflection });
+}
+
+export async function upsertDailyCheckInContext(data: {
+  date?: string;
+  reflection?: string;
+  stress?: number | null;
+  cravings?: number | null;
+  recovery?: number | null;
+  socialQuality?: number | null;
+  environmentQuality?: number | null;
+  focusFriction?: number | null;
+}) {
   const userId = await requireCurrentUserId();
-  const today = new Date();
+  const today = data.date ? new Date(data.date) : getTodayDate();
   today.setHours(0, 0, 0, 0);
 
   await db.dailyLog.upsert({
     where: { userId_date: { userId, date: today } },
-    update: { reflection },
-    create: { userId, date: today, reflection },
+    update: {
+      reflection: data.reflection,
+      stress: data.stress,
+      cravings: data.cravings,
+      recovery: data.recovery,
+      socialQuality: data.socialQuality,
+      environmentQuality: data.environmentQuality,
+      focusFriction: data.focusFriction,
+    },
+    create: {
+      userId,
+      date: today,
+      reflection: data.reflection,
+      stress: data.stress,
+      cravings: data.cravings,
+      recovery: data.recovery,
+      socialQuality: data.socialQuality,
+      environmentQuality: data.environmentQuality,
+      focusFriction: data.focusFriction,
+    },
   });
   revalidatePath("/today");
+  revalidatePath("/reviews");
 }
 
 export async function getTodayReflection() {
   const userId = await requireCurrentUserId();
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const today = getTodayDate();
   return db.dailyLog.findUnique({
     where: { userId_date: { userId, date: today } },
   });

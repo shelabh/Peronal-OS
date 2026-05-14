@@ -1,0 +1,30 @@
+CREATE TYPE "HabitType" AS ENUM ('BINARY', 'QUANTITY', 'THRESHOLD');
+
+CREATE TYPE "HabitLogStatus" AS ENUM ('MISSED', 'PARTIAL', 'DONE');
+
+ALTER TABLE "Habit"
+ADD COLUMN "habitType" "HabitType" NOT NULL DEFAULT 'BINARY',
+ADD COLUMN "cadenceRule" TEXT,
+ADD COLUMN "targetValue" DOUBLE PRECISION,
+ADD COLUMN "unit" TEXT,
+ADD COLUMN "lifeAreaId" TEXT,
+ADD COLUMN "goalId" TEXT;
+
+ALTER TABLE "HabitLog"
+ADD COLUMN "status" "HabitLogStatus" NOT NULL DEFAULT 'MISSED',
+ADD COLUMN "value" DOUBLE PRECISION;
+
+UPDATE "HabitLog"
+SET
+  "status" = CASE WHEN "completed" THEN 'DONE'::"HabitLogStatus" ELSE 'MISSED'::"HabitLogStatus" END,
+  "value" = CASE WHEN "completed" THEN 1 ELSE NULL END;
+
+ALTER TABLE "Habit"
+ADD CONSTRAINT "Habit_lifeAreaId_fkey"
+FOREIGN KEY ("lifeAreaId") REFERENCES "LifeArea"("id")
+ON DELETE SET NULL ON UPDATE CASCADE;
+
+ALTER TABLE "Habit"
+ADD CONSTRAINT "Habit_goalId_fkey"
+FOREIGN KEY ("goalId") REFERENCES "Goal"("id")
+ON DELETE SET NULL ON UPDATE CASCADE;

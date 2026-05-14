@@ -1,4 +1,21 @@
-import { db } from "@/lib/db";
+import {
+  type MetricDirection,
+  type MetricSignalRole,
+} from "@/lib/constants";
+import {
+  averageMetricValues,
+  getMetricImproving,
+  getMetricTargetStatus,
+  getMetricTrend,
+  roundMetricValue,
+  type MetricTargetStatus,
+} from "@/lib/metric-utils";
+import {
+  getGoalExecutionSnapshots,
+  getProjectExecutionSnapshots,
+} from "@/lib/execution-snapshots";
+import { getLifeAreaSnapshots, type LifeAreaSnapshot } from "@/lib/life-area-snapshots";
+import { getRecentLifeSignals } from "@/lib/life-signals";
 
 export type TrendDirection = "up" | "down" | "stable";
 
@@ -26,12 +43,37 @@ export interface LifeSummaryDay {
   date: string;
   tasksCompleted: number;
   habitsCompleted: number;
+  habitsPartial: number;
   habitsPossible: number;
   deepWorkHours: number;
   sleepHours: number | null;
   mood: number | null;
   reflection: string | null;
   dailyScore: number | null;
+  stress: number | null;
+  cravings: number | null;
+  recovery: number | null;
+  socialQuality: number | null;
+  environmentQuality: number | null;
+  focusFriction: number | null;
+}
+
+export interface LifeSummaryStrategicMetric {
+  id: string;
+  name: string;
+  unit: string;
+  direction: MetricDirection;
+  signalRole: MetricSignalRole;
+  lifeAreaName: string | null;
+  goalTitle: string | null;
+  projectName: string | null;
+  targetValue: number | null;
+  latestValue: number | null;
+  sevenDayAverage: number | null;
+  trend: TrendDirection;
+  targetStatus: MetricTargetStatus;
+  daysLogged: number;
+  improving: boolean;
 }
 
 export interface LifeSummary {
@@ -44,22 +86,13 @@ export interface LifeSummary {
   weeklyStats: LifeSummaryWeeklyStats;
   trends: LifeSummaryTrends;
   weakSignals: LifeSummaryWeakSignals;
+  strategicMetrics: LifeSummaryStrategicMetric[];
+  lifeAreas: LifeAreaSnapshot[];
+  execution: {
+    stalledProjectCount: number;
+    goalsAtRiskCount: number;
+  };
   days: LifeSummaryDay[];
-}
-
-function startOfDay(date: Date) {
-  const value = new Date(date);
-  value.setHours(0, 0, 0, 0);
-  return value;
-}
-
-function round(value: number, digits = 1) {
-  return Number(value.toFixed(digits));
-}
-
-function average(values: number[]) {
-  if (values.length === 0) return 0;
-  return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
 function getTrend(values: number[], stableThreshold: number): TrendDirection {
@@ -71,146 +104,56 @@ function getTrend(values: number[], stableThreshold: number): TrendDirection {
 
   if (firstHalf.length === 0 || secondHalf.length === 0) return "stable";
 
-  const delta = average(secondHalf) - average(firstHalf);
+  const delta = averageMetricValues(secondHalf) - averageMetricValues(firstHalf);
 
   if (Math.abs(delta) <= stableThreshold) return "stable";
   return delta > 0 ? "up" : "down";
 }
 
-function getLastSevenDays() {
-  const endDate = startOfDay(new Date());
-  const startDate = new Date(endDate);
-  startDate.setDate(startDate.getDate() - 6);
+function getStrategicMetricStableThreshold(values: number[], targetValue: number | null) {
+  const baseline = targetValue !== null
+    ? Math.abs(targetValue)
+    : values.length > 0
+      ? averageMetricValues(values.map((value) => Math.abs(value)))
+      : 0;
 
-  const days: Date[] = [];
-  for (let index = 0; index < 7; index += 1) {
-    const value = new Date(startDate);
-    value.setDate(startDate.getDate() + index);
-    days.push(value);
-  }
-
-  return { startDate, endDate, days };
+  return Math.max(0.1, baseline * 0.05);
 }
 
 export async function generateLifeSummary(userId: string): Promise<LifeSummary> {
-  const { startDate, endDate, days } = getLastSevenDays();
-  const rangeEnd = new Date(endDate);
-  rangeEnd.setDate(rangeEnd.getDate() + 1);
-
-  const [completedTasks, habits, deepWorkMetrics, healthEntries, dailyLogs] = await Promise.all([
-    db.task.findMany({
-      where: {
-        userId,
-        status: "DONE",
-        completedAt: { gte: startDate, lt: rangeEnd },
-      },
-      select: { id: true, completedAt: true },
-    }),
-    db.habit.findMany({
-      where: { userId },
-      select: {
-        id: true,
-        logs: {
-          where: { date: { gte: startDate, lt: rangeEnd } },
-          select: { date: true, completed: true },
-        },
-      },
-    }),
-    db.metric.findMany({
-      where: {
-        userId,
-        OR: [
-          { name: { contains: "deep work", mode: "insensitive" } },
-          { name: { contains: "deep_work", mode: "insensitive" } },
-          { category: { contains: "deep work", mode: "insensitive" } },
-          { category: { contains: "deep_work", mode: "insensitive" } },
-        ],
-      },
-      select: {
-        id: true,
-        name: true,
-        unit: true,
-        entries: {
-          where: { date: { gte: startDate, lt: rangeEnd } },
-          select: { date: true, value: true },
-        },
-      },
-    }),
-    db.healthEntry.findMany({
-      where: { userId, date: { gte: startDate, lt: rangeEnd } },
-      select: { date: true, sleepHours: true, mood: true },
-      orderBy: { date: "asc" },
-    }),
-    db.dailyLog.findMany({
-      where: { userId, date: { gte: startDate, lt: rangeEnd } },
-      select: { date: true, reflection: true, dailyScore: true },
-      orderBy: { date: "asc" },
-    }),
+  const [signals, lifeAreas, projectSnapshots] = await Promise.all([
+    getRecentLifeSignals(userId, 7),
+    getLifeAreaSnapshots(userId, 7),
+    getProjectExecutionSnapshots(userId),
   ]);
+  const goalSnapshots = await getGoalExecutionSnapshots(userId, projectSnapshots);
 
-  const taskCountByDay = new Map<string, number>();
-  for (const task of completedTasks) {
-    if (!task.completedAt) continue;
-    const key = startOfDay(task.completedAt).toISOString();
-    taskCountByDay.set(key, (taskCountByDay.get(key) ?? 0) + 1);
-  }
+  const summaryDays: LifeSummaryDay[] = signals.days.map((day) => ({
+    date: day.date,
+    tasksCompleted: day.tasksCompleted,
+    habitsCompleted: day.habitsCompleted,
+    habitsPartial: day.habitsPartial,
+    habitsPossible: day.habitsPossible,
+    deepWorkHours: roundMetricValue(day.deepWorkHours),
+    sleepHours: day.checkIn.sleepHours,
+    mood: day.checkIn.mood,
+    reflection: day.checkIn.reflection,
+    dailyScore: day.checkIn.dailyScore,
+    stress: day.checkIn.stress,
+    cravings: day.checkIn.cravings,
+    recovery: day.checkIn.recovery,
+    socialQuality: day.checkIn.socialQuality,
+    environmentQuality: day.checkIn.environmentQuality,
+    focusFriction: day.checkIn.focusFriction,
+  }));
 
-  const habitLogsByDay = new Map<string, number>();
-  for (const habit of habits) {
-    for (const log of habit.logs) {
-      if (!log.completed) continue;
-      const key = startOfDay(log.date).toISOString();
-      habitLogsByDay.set(key, (habitLogsByDay.get(key) ?? 0) + 1);
-    }
-  }
-
-  const deepWorkByDay = new Map<string, number>();
-  for (const metric of deepWorkMetrics) {
-    for (const entry of metric.entries) {
-      const key = startOfDay(entry.date).toISOString();
-      deepWorkByDay.set(key, (deepWorkByDay.get(key) ?? 0) + entry.value);
-    }
-  }
-
-  const healthByDay = new Map(
-    healthEntries.map((entry) => [
-      startOfDay(entry.date).toISOString(),
-      { sleepHours: entry.sleepHours, mood: entry.mood },
-    ])
-  );
-
-  const dailyLogsByDay = new Map(
-    dailyLogs.map((entry) => [
-      startOfDay(entry.date).toISOString(),
-      { reflection: entry.reflection, dailyScore: entry.dailyScore },
-    ])
-  );
-
-  const summaryDays: LifeSummaryDay[] = days.map((day) => {
-    const key = day.toISOString();
-    const health = healthByDay.get(key);
-    const dailyLog = dailyLogsByDay.get(key);
-
-    return {
-      date: key,
-      tasksCompleted: taskCountByDay.get(key) ?? 0,
-      habitsCompleted: habitLogsByDay.get(key) ?? 0,
-      habitsPossible: habits.length,
-      deepWorkHours: round(deepWorkByDay.get(key) ?? 0),
-      sleepHours: health?.sleepHours ?? null,
-      mood: health?.mood ?? null,
-      reflection: dailyLog?.reflection ?? null,
-      dailyScore: dailyLog?.dailyScore ?? null,
-    };
-  });
-
-  const totalTasksCompleted = completedTasks.length;
-  const totalHabitPossible = habits.length * days.length;
+  const totalTasksCompleted = summaryDays.reduce((sum, day) => sum + day.tasksCompleted, 0);
+  const totalHabitPossibleSafe = signals.habits.length * summaryDays.length;
   const totalHabitsCompleted = summaryDays.reduce((sum, day) => sum + day.habitsCompleted, 0);
-  const habitCompletionRate = totalHabitPossible > 0
-    ? Math.round((totalHabitsCompleted / totalHabitPossible) * 100)
+  const habitCompletionRate = totalHabitPossibleSafe > 0
+    ? Math.round((totalHabitsCompleted / totalHabitPossibleSafe) * 100)
     : 0;
-  const totalDeepWorkHours = round(
+  const totalDeepWorkHours = roundMetricValue(
     summaryDays.reduce((sum, day) => sum + day.deepWorkHours, 0)
   );
 
@@ -221,23 +164,49 @@ export async function generateLifeSummary(userId: string): Promise<LifeSummary> 
     .map((day) => day.mood)
     .filter((value): value is number => value != null);
 
-  const avgSleep = sleepValues.length > 0 ? round(average(sleepValues)) : 0;
-  const avgMood = moodValues.length > 0 ? round(average(moodValues)) : 0;
+  const avgSleep = sleepValues.length > 0 ? roundMetricValue(averageMetricValues(sleepValues)) : 0;
+  const avgMood = moodValues.length > 0 ? roundMetricValue(averageMetricValues(moodValues)) : 0;
 
   const deepWorkValues = summaryDays.map((day) => day.deepWorkHours);
+  const strategicMetricSummaries: LifeSummaryStrategicMetric[] = signals.strategicMetrics.map((metric) => {
+    const values = metric.entries.map((entry) => entry.value);
+    const latestValue = metric.entries.length > 0 ? metric.entries[metric.entries.length - 1]?.value ?? null : null;
+    const targetStatus = getMetricTargetStatus(latestValue, metric.targetValue);
+    const trend = values.length > 0
+      ? getMetricTrend(values, getStrategicMetricStableThreshold(values, metric.targetValue))
+      : "stable";
+
+    return {
+      id: metric.id,
+      name: metric.name,
+      unit: metric.unit,
+      direction: metric.direction,
+      signalRole: metric.signalRole,
+      lifeAreaName: metric.lifeAreaName,
+      goalTitle: metric.goalTitle,
+      projectName: metric.projectName,
+      targetValue: metric.targetValue,
+      latestValue,
+      sevenDayAverage: values.length > 0 ? roundMetricValue(averageMetricValues(values)) : null,
+      trend,
+      targetStatus,
+      daysLogged: metric.entries.length,
+      improving: getMetricImproving(metric.direction, values, metric.targetValue),
+    };
+  });
 
   return {
     period: {
-      startDate: startDate.toISOString(),
-      endDate: endDate.toISOString(),
+      startDate: signals.period.startDate,
+      endDate: signals.period.endDate,
       days: summaryDays.length,
     },
     hasData:
-      completedTasks.length > 0 ||
-      habits.length > 0 ||
-      deepWorkMetrics.length > 0 ||
-      healthEntries.length > 0 ||
-      dailyLogs.length > 0,
+      totalTasksCompleted > 0 ||
+      signals.habits.length > 0 ||
+      summaryDays.some((day) => day.deepWorkHours > 0) ||
+      strategicMetricSummaries.length > 0 ||
+      signals.dailyCheckIns.some((checkIn) => checkIn.hasData),
     weeklyStats: {
       totalTasksCompleted,
       habitCompletionRate,
@@ -255,7 +224,13 @@ export async function generateLifeSummary(userId: string): Promise<LifeSummary> 
       inconsistentDeepWork:
         summaryDays.filter((day) => day.deepWorkHours > 0).length > 0 &&
         summaryDays.filter((day) => day.deepWorkHours >= 1).length < 4,
-      lowHabitCompletion: totalHabitPossible > 0 && habitCompletionRate < 60,
+      lowHabitCompletion: totalHabitPossibleSafe > 0 && habitCompletionRate < 60,
+    },
+    strategicMetrics: strategicMetricSummaries,
+    lifeAreas,
+    execution: {
+      stalledProjectCount: projectSnapshots.filter((project) => project.executionStatus === "stalled").length,
+      goalsAtRiskCount: goalSnapshots.filter((goal) => goal.executionStatus === "at_risk").length,
     },
     days: summaryDays,
   };

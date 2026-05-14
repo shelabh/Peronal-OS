@@ -1,0 +1,4 @@
+CREATE TYPE "MetricDirection" AS ENUM ('INCREASE', 'DECREASE', 'MAINTAIN');
+
+ALTER TABLE "Metric"
+ADD COLUMN "direction" "MetricDirection" NOT NULL DEFAULT 'INCREASE';

@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { requireCurrentUserId } from "@/lib/auth/server";
 import type { WeeklyAnalysisResponse } from "@/lib/ai";
+import type { BehaviorPattern, ExperimentSummary } from "@/lib/coaching";
 
 export type MemoryType = "INSIGHT" | "PREFERENCE" | "STRATEGY";
 
@@ -165,6 +166,63 @@ export async function storeAnalysisMemories(
 ): Promise<void> {
   const resolvedUserId = userId ?? await requireCurrentUserId();
   const memories = extractMemoriesFromAnalysis(analysis);
+
+  for (const memory of memories) {
+    await saveMemory({ ...memory, userId: resolvedUserId });
+  }
+}
+
+export function extractMemoryFromPatternsAndExperiments(input: {
+  patterns?: BehaviorPattern[];
+  recentExperimentOutcomes?: ExperimentSummary[];
+}): SaveMemoryInput[] {
+  const candidates: SaveMemoryInput[] = [];
+
+  for (const pattern of input.patterns ?? []) {
+    if (pattern.confidence < 0.7) continue;
+
+    candidates.push({
+      type: "INSIGHT",
+      content: `${pattern.title}. ${pattern.evidenceSummary}`,
+      confidence: Math.min(0.9, pattern.confidence),
+    });
+  }
+
+  for (const experiment of input.recentExperimentOutcomes ?? []) {
+    if (!experiment.outcomeSummary?.trim()) continue;
+
+    candidates.push({
+      type: experiment.status === "COMPLETED" ? "STRATEGY" : "INSIGHT",
+      content: `${experiment.title}: ${experiment.outcomeSummary.trim()}`,
+      confidence: experiment.status === "COMPLETED" ? 0.82 : 0.72,
+    });
+  }
+
+  const deduped: SaveMemoryInput[] = [];
+
+  for (const candidate of candidates) {
+    const hasDuplicate = deduped.some(
+      (entry) =>
+        entry.type === candidate.type && areMemoriesSimilar(entry.content, candidate.content)
+    );
+
+    if (!hasDuplicate) {
+      deduped.push(candidate);
+    }
+  }
+
+  return deduped;
+}
+
+export async function storePatternAndExperimentMemories(
+  input: {
+    patterns?: BehaviorPattern[];
+    recentExperimentOutcomes?: ExperimentSummary[];
+  },
+  userId?: string
+) {
+  const resolvedUserId = userId ?? await requireCurrentUserId();
+  const memories = extractMemoryFromPatternsAndExperiments(input);
 
   for (const memory of memories) {
     await saveMemory({ ...memory, userId: resolvedUserId });

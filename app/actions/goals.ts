@@ -4,9 +4,22 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requireCurrentUserId } from "@/lib/auth/server";
 import { GoalStatus } from "@/app/generated/prisma/client";
+import {
+  getGoalExecutionSnapshotById,
+  getGoalExecutionSnapshots,
+  getProjectExecutionSnapshots,
+} from "@/lib/execution-snapshots";
 
 function optionalId(value?: string | null) {
   return value?.trim() || null;
+}
+
+function revalidateGoalSurfaces() {
+  revalidatePath("/goals");
+  revalidatePath("/projects");
+  revalidatePath("/today");
+  revalidatePath("/reviews");
+  revalidatePath("/life-areas");
 }
 
 async function validateLifeAreaId(userId: string, lifeAreaId?: string | null) {
@@ -43,15 +56,8 @@ async function validateProjectId(userId: string, projectId?: string | null) {
 
 export async function getGoals() {
   const userId = await requireCurrentUserId();
-  return db.goal.findMany({
-    where: { userId },
-    orderBy: { createdAt: "desc" },
-    include: {
-      lifeArea: true,
-      project: true,
-      _count: { select: { tasks: true } },
-    },
-  });
+  const projectSnapshots = await getProjectExecutionSnapshots(userId);
+  return getGoalExecutionSnapshots(userId, projectSnapshots);
 }
 
 export async function createGoal(data: {
@@ -61,6 +67,7 @@ export async function createGoal(data: {
   targetDate?: string;
   lifeAreaId?: string | null;
   projectId?: string | null;
+  progress?: number;
 }) {
   const userId = await requireCurrentUserId();
   const lifeAreaId = await validateLifeAreaId(userId, data.lifeAreaId);
@@ -75,15 +82,13 @@ export async function createGoal(data: {
       targetDate: data.targetDate ? new Date(data.targetDate) : undefined,
       lifeAreaId: lifeAreaId ?? undefined,
       projectId: projectId ?? undefined,
+      progress: data.progress ?? 0,
     },
-    include: {
-      lifeArea: true,
-      project: true,
-      _count: { select: { tasks: true } },
-    },
+    select: { id: true },
   });
-  revalidatePath("/goals");
-  return goal;
+
+  revalidateGoalSurfaces();
+  return getGoalExecutionSnapshotById(userId, goal.id);
 }
 
 export async function updateGoal(
@@ -95,6 +100,7 @@ export async function updateGoal(
     targetDate?: string | null;
     lifeAreaId?: string | null;
     projectId?: string | null;
+    progress?: number;
   }
 ) {
   const userId = await requireCurrentUserId();
@@ -105,6 +111,7 @@ export async function updateGoal(
     targetDate?: Date | null;
     lifeAreaId?: string | null;
     projectId?: string | null;
+    progress?: number;
   } = {};
 
   if (data.title !== undefined) updateData.title = data.title;
@@ -119,20 +126,31 @@ export async function updateGoal(
   if (data.projectId !== undefined) {
     updateData.projectId = await validateProjectId(userId, data.projectId);
   }
+  if (data.progress !== undefined) {
+    updateData.progress = Math.max(0, Math.min(100, Math.round(data.progress)));
+  }
 
   await db.goal.updateMany({ where: { id, userId }, data: updateData });
-  revalidatePath("/goals");
+  revalidateGoalSurfaces();
+  return getGoalExecutionSnapshotById(userId, id);
 }
 
 export async function updateGoalProgress(id: string, progress: number) {
   const userId = await requireCurrentUserId();
   const status = progress >= 100 ? GoalStatus.COMPLETED : GoalStatus.IN_PROGRESS;
-  await db.goal.updateMany({ where: { id, userId }, data: { progress, status } });
-  revalidatePath("/goals");
+  await db.goal.updateMany({
+    where: { id, userId },
+    data: {
+      progress: Math.max(0, Math.min(100, Math.round(progress))),
+      status,
+    },
+  });
+  revalidateGoalSurfaces();
+  return getGoalExecutionSnapshotById(userId, id);
 }
 
 export async function deleteGoal(id: string) {
   const userId = await requireCurrentUserId();
   await db.goal.deleteMany({ where: { id, userId } });
-  revalidatePath("/goals");
+  revalidateGoalSurfaces();
 }

@@ -11,12 +11,13 @@ import { toggleHabitLog, getHabits } from "@/app/actions/habits";
 import { logMetricEntry, getMetrics } from "@/app/actions/metrics";
 import { saveDailyReflection } from "@/app/actions/reviews";
 import { getTodayDate } from "@/lib/utils";
+import { HabitType } from "@/lib/constants";
 import { Plus, CheckSquare, Repeat2, Activity, BookOpen, X } from "lucide-react";
 import { useEffect } from "react";
 
 type Mode = "task" | "habit" | "metric" | "journal" | null;
 
-interface Habit { id: string; name: string }
+interface Habit { id: string; name: string; habitType: HabitType }
 interface Metric { id: string; name: string; unit: string }
 
 export function QuickEntry() {
@@ -128,10 +129,15 @@ export function QuickEntry() {
                     onChange={(e) => setSelectedHabit(e.target.value)}
                   >
                     <option value="">Select a habit…</option>
-                    {habits.map((h) => (
+                    {habits.filter((habit) => habit.habitType === HabitType.BINARY).map((h) => (
                       <option key={h.id} value={h.id}>{h.name}</option>
                     ))}
                   </select>
+                  {habits.every((habit) => habit.habitType !== HabitType.BINARY) && (
+                    <p className="text-xs text-muted-foreground">
+                      Quick entry currently supports binary habits only. Use the Habits page for quantity or threshold habits.
+                    </p>
+                  )}
                 </div>
               )}
 

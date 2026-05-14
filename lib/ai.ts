@@ -1,5 +1,10 @@
 import type { LifeSummary } from "@/lib/life-summary";
 import type { DailyContext } from "@/lib/daily-context";
+import type {
+  BehaviorPattern,
+  CoachingRecommendation,
+  ExperimentSummary,
+} from "@/lib/coaching";
 
 export interface WeeklyAnalysisResponse {
   insights: string[];
@@ -11,6 +16,10 @@ export interface WeeklyAnalysisResponse {
 export interface WeeklyAnalysisApiResponse {
   analysis: WeeklyAnalysisResponse;
   summary: LifeSummary;
+  patterns?: BehaviorPattern[];
+  recommendations?: CoachingRecommendation[];
+  activeExperiment?: ExperimentSummary | null;
+  recentExperimentOutcomes?: ExperimentSummary[];
   fallback?: string;
 }
 
@@ -26,6 +35,9 @@ export interface DailyPlanApiResponse {
   plan: DailyPlanResponse;
   dailyContext: DailyContext;
   weeklySummary: LifeSummary;
+  activeExperiment?: ExperimentSummary | null;
+  priorityPatterns?: BehaviorPattern[];
+  recommendations?: CoachingRecommendation[];
   fallback?: string;
 }
 
@@ -126,13 +138,62 @@ export function getEmptyDailyPlan(): DailyPlanResponse {
   };
 }
 
-export function buildWeeklyAnalysisPrompt(summary: LifeSummary, memory: string[] = []) {
+export function buildWeeklyAnalysisPrompt(
+  summary: LifeSummary,
+  memory: string[] = [],
+  coaching?: {
+    patterns?: BehaviorPattern[];
+    recommendations?: CoachingRecommendation[];
+    activeExperiment?: ExperimentSummary | null;
+    recentExperimentOutcomes?: ExperimentSummary[];
+  }
+) {
   const memoryBlock = memory.length > 0
     ? memory.join("\n")
     : "No long-term behavioral memory available yet.";
+  const strategicMetricsBlock = summary.strategicMetrics.length > 0
+    ? JSON.stringify(summary.strategicMetrics, null, 2)
+    : "No opted-in strategic metrics available yet.";
+  const lifeAreasBlock = summary.lifeAreas.length > 0
+    ? JSON.stringify(summary.lifeAreas, null, 2)
+    : "No life area scorecards available yet.";
+  const executionBlock = JSON.stringify(summary.execution, null, 2);
+  const patternsBlock = coaching?.patterns && coaching.patterns.length > 0
+    ? JSON.stringify(coaching.patterns, null, 2)
+    : "No deterministic behavior patterns detected yet.";
+  const experimentBlock = coaching?.activeExperiment
+    ? JSON.stringify(coaching.activeExperiment, null, 2)
+    : "No active experiment right now.";
+  const outcomesBlock = coaching?.recentExperimentOutcomes && coaching.recentExperimentOutcomes.length > 0
+    ? JSON.stringify(coaching.recentExperimentOutcomes, null, 2)
+    : "No recent experiment outcomes yet.";
+  const recommendationBlock = coaching?.recommendations && coaching.recommendations.length > 0
+    ? JSON.stringify(coaching.recommendations, null, 2)
+    : "No deterministic coaching recommendations yet.";
 
   return `Here is my long-term behavioral memory:
 ${memoryBlock}
+
+Here are my opted-in strategic metrics:
+${strategicMetricsBlock}
+
+Here are my life area scorecards:
+${lifeAreasBlock}
+
+Here is my execution layer summary:
+${executionBlock}
+
+Here are deterministic behavior patterns already detected from my data:
+${patternsBlock}
+
+Here is my active experiment:
+${experimentBlock}
+
+Here are my recent experiment outcomes:
+${outcomesBlock}
+
+Here are deterministic coaching recommendations:
+${recommendationBlock}
 
 Here is my life data:
 
@@ -148,14 +209,53 @@ Provide:
 export function buildDailyPlanPrompt(
   dailyContext: DailyContext,
   weeklySummary: LifeSummary,
-  memory: string[] = []
+  memory: string[] = [],
+  coaching?: {
+    priorityPatterns?: BehaviorPattern[];
+    recommendations?: CoachingRecommendation[];
+    activeExperiment?: ExperimentSummary | null;
+  }
 ) {
   const memoryBlock = memory.length > 0
     ? memory.join("\n")
     : "No long-term behavioral memory available yet.";
+  const priorityMetricsBlock = dailyContext.priorityMetrics.length > 0
+    ? JSON.stringify(dailyContext.priorityMetrics, null, 2)
+    : "No opted-in priority metrics available yet.";
+  const lifeAreasBlock = dailyContext.lifeAreas.length > 0
+    ? JSON.stringify(dailyContext.lifeAreas, null, 2)
+    : "No life area scorecards available yet.";
+  const executionBlock = JSON.stringify(dailyContext.execution, null, 2);
+  const patternsBlock = coaching?.priorityPatterns && coaching.priorityPatterns.length > 0
+    ? JSON.stringify(coaching.priorityPatterns, null, 2)
+    : "No priority behavior patterns detected yet.";
+  const experimentBlock = coaching?.activeExperiment
+    ? JSON.stringify(coaching.activeExperiment, null, 2)
+    : "No active experiment right now.";
+  const recommendationBlock = coaching?.recommendations && coaching.recommendations.length > 0
+    ? JSON.stringify(coaching.recommendations, null, 2)
+    : "No deterministic coaching recommendations yet.";
 
   return `Here is my long-term behavioral memory:
 ${memoryBlock}
+
+Here are my priority metrics:
+${priorityMetricsBlock}
+
+Here are my life area scorecards:
+${lifeAreasBlock}
+
+Here is my execution layer context:
+${executionBlock}
+
+Here are my priority behavior patterns:
+${patternsBlock}
+
+Here is my active experiment:
+${experimentBlock}
+
+Here are deterministic coaching recommendations:
+${recommendationBlock}
 
 Here is my daily context:
 ${JSON.stringify(dailyContext, null, 2)}
@@ -221,7 +321,13 @@ export function parseDailyPlan(payload: unknown): DailyPlanResponse | null {
 
 export async function generateWeeklyAnalysis(
   summary: LifeSummary,
-  memory: string[] = []
+  memory: string[] = [],
+  coaching?: {
+    patterns?: BehaviorPattern[];
+    recommendations?: CoachingRecommendation[];
+    activeExperiment?: ExperimentSummary | null;
+    recentExperimentOutcomes?: ExperimentSummary[];
+  }
 ): Promise<WeeklyAnalysisResponse> {
   const apiKey = process.env.OPENAI_API_KEY;
 
@@ -229,7 +335,7 @@ export async function generateWeeklyAnalysis(
     throw new Error("OPENAI_API_KEY is not configured.");
   }
 
-  const userPrompt = buildWeeklyAnalysisPrompt(summary, memory);
+  const userPrompt = buildWeeklyAnalysisPrompt(summary, memory, coaching);
 
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -275,7 +381,12 @@ export async function generateWeeklyAnalysis(
 export async function generateDailyPlan(
   dailyContext: DailyContext,
   weeklySummary: LifeSummary,
-  memory: string[] = []
+  memory: string[] = [],
+  coaching?: {
+    priorityPatterns?: BehaviorPattern[];
+    recommendations?: CoachingRecommendation[];
+    activeExperiment?: ExperimentSummary | null;
+  }
 ): Promise<DailyPlanResponse> {
   const apiKey = process.env.OPENAI_API_KEY;
 
@@ -283,7 +394,7 @@ export async function generateDailyPlan(
     throw new Error("OPENAI_API_KEY is not configured.");
   }
 
-  const userPrompt = buildDailyPlanPrompt(dailyContext, weeklySummary, memory);
+  const userPrompt = buildDailyPlanPrompt(dailyContext, weeklySummary, memory, coaching);
 
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",

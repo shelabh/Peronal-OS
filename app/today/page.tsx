@@ -1,29 +1,29 @@
 import { getTodayTasks } from "@/app/actions/tasks";
 import { getHabits } from "@/app/actions/habits";
-import { getTodayHealth } from "@/app/actions/health";
-import { getTodayReflection } from "@/app/actions/reviews";
 import { getTodayMetrics } from "@/app/actions/metrics";
-import { getTodayScore } from "@/app/actions/daily-score";
+import { requireCurrentUserId } from "@/lib/auth/server";
+import { getCoachingSnapshot } from "@/lib/coaching";
+import { getDailyCheckIn } from "@/lib/daily-checkin";
 import { TodayClient } from "./today-client";
 
 export default async function TodayPage() {
-  const [tasks, habits, health, reflection, metrics, dailyScore] = await Promise.all([
+  const userId = await requireCurrentUserId();
+  const [tasks, habits, dailyCheckIn, metrics, coaching] = await Promise.all([
     getTodayTasks(),
     getHabits(),
-    getTodayHealth(),
-    getTodayReflection(),
+    getDailyCheckIn(userId),
     getTodayMetrics(),
-    getTodayScore(),
+    getCoachingSnapshot(userId),
   ]);
 
   return (
     <TodayClient
       tasks={tasks}
       habits={habits}
-      health={health}
-      reflection={reflection?.reflection ?? ""}
+      dailyCheckIn={dailyCheckIn}
       metrics={metrics}
-      dailyScore={dailyScore}
+      initialActiveExperiment={coaching.activeExperiment}
+      initialPriorityPatterns={coaching.priorityPatterns}
     />
   );
 }

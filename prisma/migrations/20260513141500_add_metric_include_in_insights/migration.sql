@@ -1,0 +1,2 @@
+ALTER TABLE "Metric"
+ADD COLUMN "includeInInsights" BOOLEAN NOT NULL DEFAULT false;
