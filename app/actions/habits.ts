@@ -8,7 +8,7 @@ import {
   HabitFreq,
   HabitLogStatus,
   HabitType,
-} from "@/app/generated/prisma/enums";
+} from "@/lib/constants";
 import { deriveHabitLog } from "@/lib/habit-utils";
 
 function optionalId(value?: string | null) {

@@ -3,12 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requireCurrentUserId } from "@/lib/auth/server";
-import { ProjectStatus } from "@/app/generated/prisma/client";
 import {
   getProjectExecutionSnapshotById,
   getProjectExecutionSnapshots,
 } from "@/lib/execution-snapshots";
-import { type ProjectMilestoneStatus } from "@/lib/constants";
+import { ProjectStatus, type ProjectMilestoneStatus } from "@/lib/constants";
 
 interface ProjectMilestoneDelegate {
   count(args: unknown): Promise<number>;

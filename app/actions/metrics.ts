@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { requireCurrentUserId } from "@/lib/auth/server";
 import { revalidatePath } from "next/cache";
 import { getTodayDate } from "@/lib/utils";
-import { MetricDirection, MetricSignalRole } from "@/app/generated/prisma/client";
+import { MetricDirection, MetricSignalRole } from "@/lib/constants";
 
 function optionalId(value?: string | null) {
   return value?.trim() || null;

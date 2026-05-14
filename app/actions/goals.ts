@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requireCurrentUserId } from "@/lib/auth/server";
-import { GoalStatus } from "@/app/generated/prisma/client";
+import { GoalStatus } from "@/lib/constants";
 import {
   getGoalExecutionSnapshotById,
   getGoalExecutionSnapshots,

@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requireCurrentUserId } from "@/lib/auth/server";
-import { Priority, TaskStatus } from "@/app/generated/prisma/client";
+import { Priority, TaskStatus } from "@/lib/constants";
 
 function optionalId(value?: string | null) {
   return value?.trim() || null;
